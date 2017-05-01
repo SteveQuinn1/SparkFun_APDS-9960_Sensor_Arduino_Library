@@ -97,6 +97,7 @@
 #define APDS9960_PIEN           0b00100000
 #define APDS9960_GEN            0b01000000
 #define APDS9960_GVALID         0b00000001
+#define APDS9960_GFOV           0b00000010
 
 /* On/Off definitions */
 #define OFF                     0
@@ -183,6 +184,8 @@
 #define DEFAULT_GCONF3          0       // All photodiodes active during gesture
 #define DEFAULT_GIEN            0       // Disable gesture interrupts
 
+#define DEFAULT_LOOP_COUNT      10
+
 /* Direction definitions */
 enum {
   DIR_NONE,
@@ -222,7 +225,7 @@ public:
     /* Initialization methods */
     SparkFun_APDS9960();
     ~SparkFun_APDS9960();
-    bool init();
+    bool init(int16_t loop_count_max = DEFAULT_LOOP_COUNT);
     uint8_t getMode();
     bool setMode(uint8_t mode, uint8_t enable);
 
@@ -326,6 +329,7 @@ private:
     /* Gesture mode */
     uint8_t getGestureMode();
     bool setGestureMode(uint8_t mode);
+	bool clearGFIFO();
 
     /* Raw I2C Commands */
     bool wireWriteByte(uint8_t val);
@@ -356,6 +360,7 @@ private:
     int16_t gesture_far_count_;
     int16_t gesture_state_;
     int16_t gesture_motion_;
+    int16_t loop_count_max_;
 };
 
 #endif

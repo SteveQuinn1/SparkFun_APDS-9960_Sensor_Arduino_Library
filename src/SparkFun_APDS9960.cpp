@@ -37,6 +37,9 @@ SparkFun_APDS9960::SparkFun_APDS9960()
 
     gesture_state_ = 0;
     gesture_motion_ = DIR_NONE;
+
+	loop_count_max_ = DEFAULT_LOOP_COUNT;
+
 }
 
 /**
@@ -52,7 +55,7 @@ SparkFun_APDS9960::~SparkFun_APDS9960()
  *
  * @return True if initialized successfully. False otherwise.
  */
-bool SparkFun_APDS9960::init()
+bool SparkFun_APDS9960::init(int16_t loop_count_max)
 {
     uint8_t id;
 
@@ -60,6 +63,7 @@ bool SparkFun_APDS9960::init()
     //Wire.begin();
     //Wire.begin(D3,D1);
 
+	loop_count_max_ = loop_count_max;
 
     /* Read ID register and check against known values for APDS-9960 */
     if( !wireReadDataByte(APDS9960_ID, id) ) {
@@ -375,10 +379,10 @@ bool SparkFun_APDS9960::enableGestureSensor(bool interrupts)
        Enable PON, WEN, PEN, GEN in ENABLE
     */
     resetGestureParameters();
-    if( !wireWriteDataByte(APDS9960_WTIME, 0xFF) ) {
+    if( !wireWriteDataByte(APDS9960_WTIME, 0xFF) ) { // 2.78mS
         return false;
     }
-    if( !wireWriteDataByte(APDS9960_PPULSE, DEFAULT_GESTURE_PPULSE) ) {
+    if( !wireWriteDataByte(APDS9960_PPULSE, DEFAULT_GESTURE_PPULSE) ) { // 16us, 10 pulses
         return false;
     }
     //Jon if( !setLEDBoost(LED_BOOST_300) ) {
@@ -459,6 +463,8 @@ bool SparkFun_APDS9960::isGestureAvailable()
     }
 }
 
+
+//#define GDEBUG
 /**
  * @brief Processes a gesture event and returns best guessed gesture
  *
@@ -476,13 +482,23 @@ bool SparkFun_APDS9960::isGestureAvailable()
     uint16_t motion;
     uint16_t i;
 
+
     /* Make sure that power and gesture is on and data is valid */
     if( !isGestureAvailable() || !(getMode() & 0b01000001) ) {
         return DIR_NONE;
     }
 
+	uint16_t loopCount = 0;
     /* Keep looping as long as gesture data is valid */
     while(1) {
+		loopCount++;
+		if (loopCount > loop_count_max_) {
+			resetGestureParameters();
+#ifdef GDEBUG
+            Serial.println("LC Exceeded");
+#endif
+        	return DIR_NONE;
+		}
 
         /* Wait some time to collect next batch of FIFO data */
         delay(FIFO_PAUSE_TIME);
@@ -492,6 +508,16 @@ bool SparkFun_APDS9960::isGestureAvailable()
             return ERROR;
         }
 
+        /* Return if the buffer has overflowed */ // ADDED BY SQ
+        if( (gstatus & APDS9960_GFOV) == APDS9960_GFOV ) {
+			clearGFIFO();
+#ifdef GDEBUG
+            Serial.println("FIFO Cleared");
+#endif
+        	return DIR_NONE;
+		}
+
+
         /* If we have valid data, read in FIFO */
         if( (gstatus & APDS9960_GVALID) == APDS9960_GVALID ) {
 
@@ -500,7 +526,7 @@ bool SparkFun_APDS9960::isGestureAvailable()
                 return ERROR;
             }
 
-#if DEBUG
+#ifdef GDEBUG
             Serial.print("FIFO Level: ");
             Serial.println(fifo_level);
 #endif
@@ -513,7 +539,7 @@ bool SparkFun_APDS9960::isGestureAvailable()
                 if( bytes_read == -1 ) {
                     return ERROR;
                 }
-#if DEBUG
+#ifdef GDEBUG
                 Serial.print("FIFO Dump: ");
                 for ( i = 0; i < bytes_read; i++ ) {
                     Serial.print(fifo_data[i]);
@@ -537,7 +563,7 @@ bool SparkFun_APDS9960::isGestureAvailable()
                         gesture_data_.total_gestures++;
                     }
 
-#if DEBUG
+#ifdef GDEBUG
                 Serial.print("Up Data: ");
                 for ( i = 0; i < gesture_data_.total_gestures; i++ ) {
                     Serial.print(gesture_data_.u_data[i]);
@@ -550,7 +576,7 @@ bool SparkFun_APDS9960::isGestureAvailable()
                     if( processGestureData() ) {
                         if( decodeGesture() ) {
                             //***TODO: U-Turn Gestures
-#if DEBUG
+#ifdef GDEBUG
                             //Serial.println(gesture_motion_);
 #endif
                         }
@@ -567,7 +593,7 @@ bool SparkFun_APDS9960::isGestureAvailable()
             delay(FIFO_PAUSE_TIME);
             decodeGesture();
             motion = gesture_motion_;
-#if DEBUG
+#ifdef GDEBUG
             Serial.print("END: ");
             Serial.println(gesture_motion_);
 #endif
@@ -576,6 +602,7 @@ bool SparkFun_APDS9960::isGestureAvailable()
         }
     }
 }
+
 
 /**
  * Turn the APDS-9960 on
@@ -2114,6 +2141,32 @@ bool SparkFun_APDS9960::setGestureMode(uint8_t mode)
 
     return true;
 }
+
+
+/**
+ * @brief clears GFIFO, GINT, GVALID, GFIFO_OV and GFIFO_LVL.
+ * ADDED BY SQ
+ */
+bool SparkFun_APDS9960::clearGFIFO()
+{
+    uint8_t val;
+
+    /* Read value from GCONF4 register */
+    if( !wireReadDataByte(APDS9960_GCONF4, val) ) {
+        return false;
+    }
+
+    /* Set bit in register to given value */
+    val |= 0b00000100;
+
+    /* Write register value back into GCONF4 register */
+    if( !wireWriteDataByte(APDS9960_GCONF4, val) ) {
+        return false;
+    }
+
+    return true;
+}
+
 
 /*******************************************************************************
  * Raw I2C Reads and Writes
