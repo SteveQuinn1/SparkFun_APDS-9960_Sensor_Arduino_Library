@@ -17,7 +17,9 @@
 #include <Arduino.h>
 
 /* Debug */
-#define DEBUG                   0
+//#define DEBUG
+//#define GDEBUG
+//#define DEBUG_LITE
 
 /* APDS-9960 I2C address */
 #define APDS9960_I2C_ADDR       0x39
@@ -28,7 +30,7 @@
 #define GESTURE_SENSITIVITY_2   20
 
 /* Error code for returned values */
-#define ERROR                   0xFF
+#define APDS9960_ERROR          0xFF
 
 /* Acceptable device IDs */
 #define APDS9960_ID_1           0xAB
@@ -89,29 +91,38 @@
 #define APDS9960_GFIFO_R        0xFF
 
 /* Bit fields */
-#define APDS9960_PON            0b00000001
-#define APDS9960_AEN            0b00000010
-#define APDS9960_PEN            0b00000100
-#define APDS9960_WEN            0b00001000
-#define APSD9960_AIEN           0b00010000
-#define APDS9960_PIEN           0b00100000
-#define APDS9960_GEN            0b01000000
-#define APDS9960_GVALID         0b00000001
-#define APDS9960_GFOV           0b00000010
+// Enable Register (0x80)
+#define APDS9960_E_RESERVED     0b10000000  // Write as '0'
+#define APDS9960_GEN            0b01000000  // Gesture Enable.
+#define APDS9960_PIEN           0b00100000  // Proximity Interrupt Enable.
+#define APSD9960_AIEN           0b00010000  // ALS Interrupt Enable.
+#define APDS9960_WEN            0b00001000  // Wait Enable.
+#define APDS9960_PEN            0b00000100  // Proximity Detect Enable.
+#define APDS9960_AEN            0b00000010  // ALS Enable.
+#define APDS9960_PON            0b00000001  // Power ON.
+// Gesture Status Register (0xAF)
+#define APDS9960_GS_RESERVED7   0b10000000  // Don't care
+#define APDS9960_GS_RESERVED6   0b10000000  // Don't care
+#define APDS9960_GS_RESERVED5   0b10000000  // Don't care
+#define APDS9960_GS_RESERVED4   0b10000000  // Don't care
+#define APDS9960_GS_RESERVED3   0b10000000  // Don't care
+#define APDS9960_GS_RESERVED2   0b10000000  // Don't care
+#define APDS9960_GFOV           0b00000010  // Gesture FIFO Overflow.
+#define APDS9960_GVALID         0b00000001  // Gesture FIFO Data. GVALID bit is sent when GFLVL becomes greater than GFIFOTH
 
 /* On/Off definitions */
-#define OFF                     0
-#define ON                      1
+#define APDS9960_OFF            0
+#define APDS9960_ON             1
 
 /* Acceptable parameters for setMode */
-#define POWER                   0
+#define APDS9960_POWER          0
 #define AMBIENT_LIGHT           1
-#define PROXIMITY               2
+#define APDS9960_PROXIMITY      2
 #define WAITING_TIME            3
 #define AMBIENT_LIGHT_INT       4
 #define PROXIMITY_INT           5
-#define GESTURE                 6
-#define ALL                     7
+#define APDS9960_GESTURE        6
+#define APDS9960_ALL            7
 
 /* LED Drive values */
 #define LED_DRIVE_100MA         0
@@ -170,21 +181,24 @@
 #define DEFAULT_AIHT            0
 #define DEFAULT_PERS            0x11    // 2 consecutive prox or ALS for int.
 #define DEFAULT_CONFIG2         0x01    // No saturation interrupts or LED boost
-#define DEFAULT_CONFIG3         0       // Enable all photodiodes, no SAI
+#define DEFAULT_CONFIG3         0       // Enable all photodiodes pairs. L/R, U/D.
 #define DEFAULT_GPENTH          40      // Threshold for entering gesture mode
 #define DEFAULT_GEXTH           30      // Threshold for exiting gesture mode
 #define DEFAULT_GCONF1          0x40    // 4 gesture events for int., 1 for exit
-#define DEFAULT_GGAIN           GGAIN_4X
-//#define DEFAULT_GGAIN           GGAIN_2X
-//#define DEFAULT_GLDRIVE         LED_DRIVE_100MA
-#define DEFAULT_GLDRIVE         LED_DRIVE_25MA
+//#define DEFAULT_GCONF1          0xC0    // 16 gesture events for int., 1 for exit
+#define DEFAULT_GGAIN           GGAIN_1X
+#define DEFAULT_GLDRIVE         LED_DRIVE_12_5MA
 #define DEFAULT_GWTIME          GWTIME_2_8MS
-#define DEFAULT_GOFFSET         0       // No offset scaling for gesture mode
+
+#define DEFAULT_GOFFSET_U       0x00    // No offset scaling for gesture mode
+#define DEFAULT_GOFFSET_D       0x00    // No offset scaling for gesture mode
+#define DEFAULT_GOFFSET_L       0x00    // No offset scaling for gesture mode
+#define DEFAULT_GOFFSET_R       0x00    // No offset scaling for gesture mode
 #define DEFAULT_GPULSE          0xC9    // 32us, 10 pulses
 #define DEFAULT_GCONF3          0       // All photodiodes active during gesture
 #define DEFAULT_GIEN            0       // Disable gesture interrupts
 
-#define DEFAULT_LOOP_COUNT      10
+
 
 /* Direction definitions */
 enum {
@@ -206,6 +220,9 @@ enum {
   ALL_STATE
 };
 
+
+
+
 /* Container for gesture data */
 typedef struct gesture_data_type {
     uint8_t u_data[32];
@@ -225,7 +242,7 @@ public:
     /* Initialization methods */
     SparkFun_APDS9960();
     ~SparkFun_APDS9960();
-    bool init(int16_t loop_count_max = DEFAULT_LOOP_COUNT);
+    bool init(void);
     uint8_t getMode();
     bool setMode(uint8_t mode, uint8_t enable);
 
@@ -293,6 +310,9 @@ public:
     //Jon int readGesture();
     int16_t readGesture();
 
+    bool wireReadDataByte(uint8_t reg, uint8_t &val);
+
+
 private:
 
     /* Gesture processing */
@@ -336,7 +356,7 @@ private:
     bool wireWriteDataByte(uint8_t reg, uint8_t val);
     // Jon bool wireWriteDataBlock(uint8_t reg, uint8_t *val, unsigned int len);
     bool wireWriteDataBlock(uint8_t reg, uint8_t *val, uint16_t len);
-    bool wireReadDataByte(uint8_t reg, uint8_t &val);
+
     // Jon int wireReadDataBlock(uint8_t reg, uint8_t *val, unsigned int len);
     int16_t wireReadDataBlock(uint8_t reg, uint8_t *val, uint16_t len);
 
@@ -360,7 +380,7 @@ private:
     int16_t gesture_far_count_;
     int16_t gesture_state_;
     int16_t gesture_motion_;
-    int16_t loop_count_max_;
+
 };
 
 #endif
